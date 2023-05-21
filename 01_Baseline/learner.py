@@ -11,8 +11,8 @@ from utils_sequential import shuffle_alive_agents, get_shuffled_tensor, sequenti
     building_policy
 
 
-@ray.remote
-# @ray.remote(num_cpus=1, num_gpus=1)
+# @ray.remote
+@ray.remote(num_cpus=1, num_gpus=1)
 class Learner:
     def __init__(self):
         self.env = BattleFieldStrategy()
