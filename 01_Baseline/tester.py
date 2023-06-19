@@ -791,9 +791,9 @@ def main():
 
     # Load model (need for test)
     load_dir = Path(__file__).parent / 'trial-1/models'
-    # load_name = '/best_model/best_model'
+    load_name = '/best_model/best_model'
 
-    # dummy_policy.load_weights(str(load_dir) + load_name)
+    dummy_policy.load_weights(str(load_dir) + load_name)
 
     weights = dummy_policy.get_weights()
 

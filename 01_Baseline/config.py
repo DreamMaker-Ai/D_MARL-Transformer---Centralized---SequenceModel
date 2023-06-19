@@ -66,7 +66,7 @@ class Config:
         self.num_minibatchs = 30  # bach_sizeのminibatchの数/1 update_cycle of learner, default=30
         self.tau = 0.01  # Soft update of target network
         self.gamma = 0.96
-        self.max_steps = 100  # Default = 100
+        self.max_steps = 100  # Default = 100 for training, 150 for test, 200 for robustness
 
         self.learning_rate = 5e-5  # Default = 5e-5
         self.loss_coef = 1.0  # Default = 1.0

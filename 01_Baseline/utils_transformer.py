@@ -36,7 +36,7 @@ def make_causal_mask(batch_size, num_agents):
     mult = tf.concat(
         [tf.expand_dims(batch_size, -1), tf.constant([1, 1], dtype=tf.int32)],
         axis=0
-    )  # (batch,1,1), bool
+    )  # [batch,1,1], shape=(3,), bool
 
     return tf.tile(input=mask, multiples=mult)  # (batch,n,n)
 

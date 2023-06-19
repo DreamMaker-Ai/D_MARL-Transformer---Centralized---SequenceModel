@@ -261,4 +261,12 @@ def main(num_actors=8):
 
 
 if __name__ == '__main__':
+    import pickle
+    from tensorflow.python.client import device_lib
+
+    num_device = device_lib.list_local_devices()
+    print(num_device)
+    f = open('num_device.txt', 'wb')
+    pickle.dump(num_device, f)
+
     main(num_actors=4)  # default=4 for GCP

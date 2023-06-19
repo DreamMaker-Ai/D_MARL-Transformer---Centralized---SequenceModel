@@ -138,6 +138,31 @@ class CNNBlock(tf.keras.models.Model):
         return model
 
 
+class PositionalEncoding:
+    def __init__(self, seq_len, depth):
+        """
+        :param seq_len: config.max_num_red_agents=n(=15, for training)
+        :param depth: config.hidden_dim(=256) or config.key_dim(=64)
+        """
+        super(PositionalEncoding, self).__init__()
+
+        h_dim = depth / 2
+
+        positions = np.arange(seq_len)  # (n,)
+        positions = np.expand_dims(positions, axis=-1)  # (n,1)
+
+        depths = np.arange(h_dim) / h_dim  # (h_dim,)
+        depths = np.expand_dims(depths, axis=0)  # (1,h_dim)
+
+        angle_rates = 1 / (10000 ** depths)  # (1, h_dim)
+        angle_rads = positions * angle_rates  # (n, h_dim)
+
+        pos_encoding = \
+            np.concatenate([np.sin(angle_rads), np.cos(angle_rads)], axis=-1)  # (n,depth)
+
+        self.pos_encoding = tf.cast(pos_encoding, dtype=tf.float32)
+
+
 class SelfAttentionBlock(tf.keras.models.Model):
     """
     Two layers of MultiHeadAttention (Self Attention with provided mask)
@@ -149,26 +174,26 @@ class SelfAttentionBlock(tf.keras.models.Model):
     :return: features: (None,n,hidden_dim)=(None,15,256)
              score: (None,num_heads,n,n)=(None,2,15,15)
 
-    Model: "self_attention_block_1"
+    Model: "self_attention_block"
     _________________________________________________________________
      Layer (type)                Output Shape              Param #
     =================================================================
-     multi_head_attention_1 (Mul  multiple                 263168
-     tiHeadAttention)
+     multi_head_attention (Multi  multiple                 131712
+     HeadAttention)
 
-     add_2 (Add)                 multiple                  0
+     add (Add)                   multiple                  0
 
-     dense_4 (Dense)             multiple                  131584
+     dense_1 (Dense)             multiple                  131584
 
-     dense_5 (Dense)             multiple                  131328
+     dense_2 (Dense)             multiple                  131328
 
-     dropout_3 (Dropout)         multiple                  0
+     dropout (Dropout)           multiple                  0
 
-     add_3 (Add)                 multiple                  0
+     add_1 (Add)                 multiple                  0
 
     =================================================================
-    Total params: 526,080
-    Trainable params: 526,080
+    Total params: 394,624
+    Trainable params: 394,624
     Non-trainable params: 0
     _________________________________________________________________
     """
@@ -303,11 +328,11 @@ class EncoderBlock(tf.keras.models.Model):
     _________________________________________________________________
      Layer (type)                Output Shape              Param #
     =================================================================
-     embedding (Embedding)       multiple                  3840
-
      cnn_block_1 (CNNBlock)      multiple                  258944
 
      dropout_1 (Dropout)         multiple                  0
+
+     add_2 (Add)                 multiple                  0
 
      mask_block (MaskBlock)      multiple                  0
 
@@ -317,8 +342,8 @@ class EncoderBlock(tf.keras.models.Model):
      mask_block_1 (MaskBlock)    multiple                  0
 
     =================================================================
-    Total params: 657,408
-    Trainable params: 657,408
+    Total params: 653,568
+    Trainable params: 653,568
     Non-trainable params: 0
     _________________________________________________________________
     """
@@ -328,14 +353,16 @@ class EncoderBlock(tf.keras.models.Model):
 
         self.config = config
 
-        self.pos_emb = tf.keras.layers.Embedding(
-            input_dim=self.config.max_num_red_agents,
-            output_dim=self.config.hidden_dim
+        self.pos_encoding = PositionalEncoding(
+            seq_len=self.config.max_num_red_agents,
+            depth=self.config.hidden_dim
         )
 
         self.cnn = CNNBlock(config=self.config)
 
         self.dropout = tf.keras.layers.Dropout(rate=self.config.dropout_rate)
+
+        self.add1 = tf.keras.layers.Add()
 
         self.mask_blk1 = MaskBlock()
 
@@ -349,13 +376,8 @@ class EncoderBlock(tf.keras.models.Model):
         # mask: (b,n)
 
         # position encoding block
-        maxlen = self.config.max_num_red_agents
-        positions = tf.range(start=0,
-                             limit=maxlen,
-                             delta=1)  # (n,)=(15,)
-
-        positions = self.pos_emb(positions)  # (n,hidden_dim)=(15,256)
-        positions = tf.expand_dims(positions, axis=0)  # (1,15,256)
+        positions = \
+            tf.expand_dims(self.pos_encoding.pos_encoding, axis=0)  # (1,n,hidden_dim)=(1,15,256)
 
         # cnn block
         features = self.cnn(x)  # (b,n,hidden_dim)=(b,15,256)
@@ -363,7 +385,7 @@ class EncoderBlock(tf.keras.models.Model):
         features = self.dropout(features)  # (b,15,256)
 
         # add & mask process
-        features = features + positions  # (b,15,256)
+        features = self.add1([features, positions])  # (b,15,256)
 
         features = self.mask_blk1(features, mask)  # (b,15,256)
 
@@ -598,11 +620,9 @@ class DecoderBlock(tf.keras.models.Model):
     _________________________________________________________________
      Layer (type)                Output Shape              Param #
     =================================================================
-     embedding_1 (Embedding)     multiple                  960
+     embedding (Embedding)       multiple                  384
 
-     embedding_2 (Embedding)     multiple                  384
-
-     add_4 (Add)                 multiple                  0
+     add_5 (Add)                 multiple                  0
 
      mask_block_2 (MaskBlock)    multiple                  0
 
@@ -617,8 +637,8 @@ class DecoderBlock(tf.keras.models.Model):
      mask_block_6 (MaskBlock)    multiple                  0
 
     =================================================================
-    Total params: 578,437
-    Trainable params: 578,437
+    Total params: 577,477
+    Trainable params: 577,477
     Non-trainable params: 0
     _________________________________________________________________
     """
@@ -628,11 +648,11 @@ class DecoderBlock(tf.keras.models.Model):
 
         self.config = config
 
-        self.pos_emb = \
-            tf.keras.layers.Embedding(
-                input_dim=self.config.max_num_red_agents,
-                output_dim=self.config.key_dim
-            )
+        self.pos_encoding = PositionalEncoding(
+            seq_len=self.config.max_num_red_agents,
+            depth=self.config.key_dim
+        )
+
         self.action_emb = \
             tf.keras.layers.Embedding(
                 input_dim=self.config.action_dim + 1,
@@ -657,13 +677,8 @@ class DecoderBlock(tf.keras.models.Model):
         """
 
         # Position encoding block
-        maxlen = self.config.max_num_red_agents
-        positions = tf.range(start=0,
-                             limit=maxlen,
-                             delta=1)  # (n,)=(15,)
-
-        positions = self.pos_emb(positions)  # (n,key_dim)=(15,64)
-        positions = tf.expand_dims(positions, axis=0)  # (1,n,key_dim)=(1,15,64)
+        positions = \
+            tf.expand_dims(self.pos_encoding.pos_encoding, axis=0)  # (1,n,key_dim)=(1,15,64)
 
         # Input action sequence encoding
         features = self.action_emb(x)  # (b,n,key_dim)=(1,15,64)
@@ -752,6 +767,11 @@ def main():
         dpi=96 * 3
     )
     """
+
+    """ position encoding """
+    pos_encoding = PositionalEncoding(seq_len=config.max_num_red_agents, depth=config.key_dim)
+
+    pos_encoding.pos_encoding
 
     """ mha model """
     mha = SelfAttentionBlock(config=config)

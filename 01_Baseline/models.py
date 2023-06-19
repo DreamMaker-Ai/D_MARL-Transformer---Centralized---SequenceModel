@@ -101,11 +101,11 @@ def main():
     _________________________________________________________________
      Layer (type)                Output Shape              Param #   
     =================================================================
-     embedding (Embedding)       multiple                  3840      
-                                                                     
      cnn_block (CNNBlock)        multiple                  258944    
                                                                      
      dropout (Dropout)           multiple                  0         
+                                                                     
+     add (Add)                   multiple                  0         
                                                                      
      mask_block (MaskBlock)      multiple                  0         
                                                                      
@@ -115,8 +115,8 @@ def main():
      mask_block_1 (MaskBlock)    multiple                  0         
                                                                      
     =================================================================
-    Total params: 657,408
-    Trainable params: 657,408
+    Total params: 653,568
+    Trainable params: 653,568
     Non-trainable params: 0
     _________________________________________________________________
     """
@@ -128,11 +128,9 @@ def main():
     _________________________________________________________________
      Layer (type)                Output Shape              Param #   
     =================================================================
-     embedding_1 (Embedding)     multiple                  960       
+     embedding (Embedding)       multiple                  384       
                                                                      
-     embedding_2 (Embedding)     multiple                  384       
-                                                                     
-     add_2 (Add)                 multiple                  0         
+     add_3 (Add)                 multiple                  0         
                                                                      
      mask_block_2 (MaskBlock)    multiple                  0         
                                                                      
@@ -147,13 +145,30 @@ def main():
      mask_block_6 (MaskBlock)    multiple                  0         
                                                                      
     =================================================================
-    Total params: 578,437
-    Trainable params: 578,437
+    Total params: 577,477
+    Trainable params: 577,477
     Non-trainable params: 0
     _________________________________________________________________
     """
 
     marl_transformer.summary()
+    """
+    Model: "marl_transformer_sequence_model"
+    _________________________________________________________________
+     Layer (type)                Output Shape              Param #   
+    =================================================================
+     encoder_block (EncoderBlock  multiple                 653568    
+     )                                                               
+                                                                     
+     decoder_block (DecoderBlock  multiple                 577477    
+     )                                                               
+                                                                     
+    =================================================================
+    Total params: 1,231,045
+    Trainable params: 1,231,045
+    Non-trainable params: 0
+    _________________________________________________________________
+    """
 
 
 if __name__ == '__main__':
