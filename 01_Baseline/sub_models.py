@@ -161,7 +161,7 @@ class PositionalEncoding:
             np.concatenate([np.sin(angle_rads), np.cos(angle_rads)], axis=-1)  # (n,depth)
 
         # Set the relative scale of features and pos_encoding
-        pos_encoding = pos_encoding / np.sqrt(depth)
+        # pos_encoding = pos_encoding / np.sqrt(depth)
 
         self.pos_encoding = tf.cast(pos_encoding, dtype=tf.float32)
 
@@ -387,8 +387,9 @@ class EncoderBlock(tf.keras.models.Model):
 
         features = self.dropout(features)  # (b,15,256)
 
-        # add & mask process
-        features = self.add1([features, positions])  # (b,15,256)
+        # add (with relative scale of features and pos_encoding) & mask process
+        features = self.add1([features * tf.math.sqrt(tf.cast(self.config.hidden_dim, tf.float32)),
+                              positions])  # (b,15,256)
 
         features = self.mask_blk1(features, mask)  # (b,15,256)
 
@@ -686,7 +687,9 @@ class DecoderBlock(tf.keras.models.Model):
         # Input action sequence encoding
         features = self.action_emb(x)  # (b,n,key_dim)=(1,15,64)
 
-        features = self.add1([features, positions])  # (b,n,key_dim)=(1,15,64)
+        # add (with relative scale of features and pos_encoding) & mask process
+        features = self.add1([features * tf.math.sqrt(tf.cast(self.config.key_dim, tf.float32)),
+                              positions])  # (b,15,64)
         features = self.mask_blk1(features, mask)  # (b,n,key_dim)=(1,15,64)
 
         # Make causal mask
