@@ -160,6 +160,9 @@ class PositionalEncoding:
         pos_encoding = \
             np.concatenate([np.sin(angle_rads), np.cos(angle_rads)], axis=-1)  # (n,depth)
 
+        # Set the relative scale of features and pos_encoding
+        pos_encoding = pos_encoding / np.sqrt(depth)
+
         self.pos_encoding = tf.cast(pos_encoding, dtype=tf.float32)
 
 
