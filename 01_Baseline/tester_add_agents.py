@@ -14,142 +14,14 @@ from battlefield_strategy_add_agents import BattleFieldStrategy
 from models import MarlTransformerSequenceModel
 from utils_gnn import get_alive_agents_ids
 from utils_transformer import make_mask, make_padded_obs
+from utils_sequential import shuffle_alive_agents, get_shuffled_tensor, sequential_model_2, \
+    building_policy
 
 import matplotlib.pyplot as plt
 
 
-def who_wins(result_red, result_blue):
-    num_alive_reds = result_red['num_alive_agent']
-    num_alive_blues = result_blue['num_alive_agent']
-
-    if (num_alive_reds <= 0) & (num_alive_blues <= 0):
-        winner = 'draw'
-
-    elif num_alive_reds <= 0:
-        winner = 'blue_win'
-
-    elif num_alive_blues <= 0:
-        winner = 'red_win'
-
-    else:
-        winner = 'no_contest'
-
-    return winner
-
-
-def summarize_agent_result(agents):
-    num_platoon = 0
-    num_company = 0
-    num_alive_platoon = 0
-    num_alive_company = 0
-    remaining_effective_force = 0
-    initial_effective_force = 0
-
-    for agent in agents:
-        if agent.type == 'platoon':
-            num_platoon += 1
-        else:
-            num_company += 1
-
-        if agent.alive:
-            if agent.type == 'platoon':
-                num_alive_platoon += 1
-            else:
-                num_alive_company += 1
-
-            remaining_effective_force += agent.effective_force
-
-        initial_effective_force += agent.initial_effective_force
-
-    num_initial_agents = num_platoon + num_company
-    num_alive = num_alive_platoon + num_alive_company
-
-    result = {}
-
-    result['num_initial_agent'] = num_initial_agents
-    result['num_initial_platoon'] = num_platoon
-    result['num_initial_company'] = num_company
-
-    result['num_alive_agent'] = num_alive
-    result['num_alive_platoon'] = num_alive_platoon
-    result['num_alive_company'] = num_alive_company
-
-    result['initial_effective_force'] = initial_effective_force
-    result['remaining_effective_force'] = remaining_effective_force
-
-    return result
-
-
-def summarize_episode_results(results, result_red, result_blue, winner):
-    # For reds
-    results['alive_reds_ratio'].append(
-        result_red['num_alive_agent'] / result_red['num_initial_agent']
-    )
-
-    results['alive_red_platoon'].append(result_red['num_alive_platoon'])
-    results['alive_red_company'].append(result_red['num_alive_company'])
-
-    results['initial_red_platoon'].append(result_red['num_initial_platoon'])
-    results['initial_red_company'].append(result_red['num_initial_company'])
-
-    results['remaining_red_effective_force_ratio'].append(
-        result_red['remaining_effective_force'] / result_red['initial_effective_force']
-    )
-
-    # For blues
-    results['alive_blues_ratio'].append(
-        result_blue['num_alive_agent'] / result_blue['num_initial_agent']
-    )
-
-    results['alive_blue_platoon'].append(result_blue['num_alive_platoon'])
-    results['alive_blue_company'].append(result_blue['num_alive_company'])
-
-    results['initial_blue_platoon'].append(result_blue['num_initial_platoon'])
-    results['initial_blue_company'].append(result_blue['num_initial_company'])
-
-    results['remaining_blue_effective_force_ratio'].append(
-        result_blue['remaining_effective_force'] / result_blue['initial_effective_force']
-    )
-
-    results['winner'].append(winner)
-
-    return results
-
-
-def summarize_results(results):
-    result = {}
-
-    result['episode_rewards'] = np.mean(results['episode_rewards'])
-    result['episode_lens'] = np.mean(results['episode_lens'])
-
-    result['num_alive_reds_ratio'] = np.mean(results['alive_reds_ratio'])
-    result['num_alive_red_platoon'] = np.mean(results['alive_red_platoon'])
-    result['num_alive_red_company'] = np.mean(results['alive_red_company'])
-    result['remaining_red_effective_force_ratio'] = \
-        np.mean(results['remaining_red_effective_force_ratio'])
-
-    result['num_initial_red_platoon'] = np.mean(results['initial_red_platoon'])
-    result['num_initial_red_company'] = np.mean(results['initial_red_company'])
-
-    result['num_alive_blues_ratio'] = np.mean(results['alive_blues_ratio'])
-    result['num_alive_blue_platoon'] = np.mean(results['alive_blue_platoon'])
-    result['num_alive_blue_company'] = np.mean(results['alive_blue_company'])
-    result['remaining_blue_effective_force_ratio'] = \
-        np.mean(results['remaining_blue_effective_force_ratio'])
-
-    result['num_initial_blue_platoon'] = np.mean(results['initial_blue_platoon'])
-    result['num_initial_blue_company'] = np.mean(results['initial_blue_company'])
-
-    result['num_red_win'] = results['winner'].count('red_win')
-    result['num_blue_win'] = results['winner'].count('blue_win')
-    result['draw'] = results['winner'].count('draw')
-    result['no_contest'] = results['winner'].count('no_contest')
-
-    return result
-
-
-# @ray.remote
-@ray.remote(num_cpus=2, num_gpus=0)
+@ray.remote
+# @ray.remote(num_cpus=2, num_gpus=0)
 class Tester:
     def __init__(self):
         # Make a copy of environment
@@ -209,7 +81,6 @@ class Tester:
 
              self.prev_actions[red.id]: int (TODO)
         """
-
         self.frames = {}
         self.states = {}
         self.prev_actions = {}
@@ -247,7 +118,18 @@ class Tester:
                               max_num_agents=self.env.config.max_num_red_agents)  # (1,n)
 
         # Build policy
-        self.policy(self.padded_states, self.mask, training=False)
+        shuffled_alive_agents_ids, shuffled_order = shuffle_alive_agents(self.alive_agents_ids)
+
+        shuffled_padded_states = \
+            get_shuffled_tensor(self.padded_states,
+                                shuffled_order=shuffled_order)  # (1,n,g,g,ch*n_frames)
+
+        building_policy(config=self.env.config,
+                        policy=self.policy,
+                        alive_agents_ids=shuffled_alive_agents_ids,
+                        padded_states=shuffled_padded_states,
+                        masks=self.mask,
+                        training=False)
 
         # reset episode variables
         self.step = 0
@@ -296,15 +178,36 @@ class Tester:
 
             while not dones['all_dones']:
 
-                q_logits, scores = self.policy(self.padded_states, self.mask, training=False)
-                # (1,n,action_dim), [(1,num_heads,n,n),(1,num_heads,n,n)]
+                shuffled_alive_agents_ids, shuffled_order = shuffle_alive_agents(
+                    self.alive_agents_ids)
+
+                shuffled_padded_states = \
+                    get_shuffled_tensor(self.padded_states,
+                                        shuffled_order=shuffled_order)  # (1,n,g,g,ch*n_frames)
+
+                generated_qlogits, generated_actions, scores = \
+                    sequential_model_2(config=self.env.config,
+                                       policy=self.policy,
+                                       shuffled_padded_states=shuffled_padded_states,
+                                       mask=self.mask,
+                                       training=False
+                                       )
+                # (1,n,action_dim), (b,n))
+                # (b,n,action_dim), (b,n)
+                # scores=[enc_score, dec_scores], enc_scores: (1,num_head,n,n),
+                # dec_scores=[score_causal_self_att, score_causal_att],
+                #                   [(1,num_head,n,n),(1,num_head,n,n)]
+
+                # For animation, I use attention scores of decoder, encoder
+                # [dec_causal_self_att, dec_causal_att, enc_self_att]
+                scores = [scores[1][0], scores[1][1], scores[0]]
 
                 # get alive_agents & all agents actions. action=0 <- do nothing
                 actions = {}  # For alive agents
 
-                acts = np.argmax(q_logits[0, :, :], axis=-1)  # (n,)
+                acts = generated_actions[0]  # (n,), b=1 for tester & actor
 
-                for i, a in enumerate(self.alive_agents_ids):
+                for i, a in enumerate(shuffled_alive_agents_ids):
                     agent_id = 'red_' + str(a)
 
                     if np.random.rand() >= epsilon:  # epsilon-greedy
@@ -340,6 +243,7 @@ class Tester:
                         self.frames[agent_id].append(
                             next_obserations[agent_id]
                         )  # append (g,g,ch) to deque
+
 
                     next_states[agent_id] = np.concatenate(
                         self.frames[agent_id], axis=2
@@ -404,19 +308,13 @@ class Tester:
                     if red.alive:
                         self.env.make_animation.add_observations_3(next_obserations[red.id])
 
-                        self.env.make_animation_attention_map.add_att_map(
-                            relation_kernel=0,  # For relation_kernel 0
-                            agent_id=red.id,
-                            alive_agents_ids=self.alive_agents_ids,
-                            atts=scores,
-                        )
-
-                        self.env.make_animation_attention_map.add_att_map(
-                            relation_kernel=1,  # For relation_kernel 1
-                            agent_id=red.id,
-                            alive_agents_ids=self.alive_agents_ids,
-                            atts=scores,
-                        )
+                        for kernel_id in range(len(scores)):
+                            self.env.make_animation_attention_map.add_att_map(
+                                relation_kernel=kernel_id,  # For relation_kernel 0
+                                agent_id=red.id,
+                                alive_agents_ids=self.alive_agents_ids,
+                                atts=scores,
+                            )
 
                         self.env.make_animation_attention_map.add_observations_3(
                             next_obserations[red.id]
@@ -718,6 +616,136 @@ class Tester:
             json.dump(test_conds, f, indent=5)
 
 
+def who_wins(result_red, result_blue):
+    num_alive_reds = result_red['num_alive_agent']
+    num_alive_blues = result_blue['num_alive_agent']
+
+    if (num_alive_reds <= 0) & (num_alive_blues <= 0):
+        winner = 'draw'
+
+    elif num_alive_reds <= 0:
+        winner = 'blue_win'
+
+    elif num_alive_blues <= 0:
+        winner = 'red_win'
+
+    else:
+        winner = 'no_contest'
+
+    return winner
+
+
+def summarize_agent_result(agents):
+    num_platoon = 0
+    num_company = 0
+    num_alive_platoon = 0
+    num_alive_company = 0
+    remaining_effective_force = 0
+    initial_effective_force = 0
+
+    for agent in agents:
+        if agent.type == 'platoon':
+            num_platoon += 1
+        else:
+            num_company += 1
+
+        if agent.alive:
+            if agent.type == 'platoon':
+                num_alive_platoon += 1
+            else:
+                num_alive_company += 1
+
+            remaining_effective_force += agent.effective_force
+
+        initial_effective_force += agent.initial_effective_force
+
+    num_initial_agents = num_platoon + num_company
+    num_alive = num_alive_platoon + num_alive_company
+
+    result = {}
+
+    result['num_initial_agent'] = num_initial_agents
+    result['num_initial_platoon'] = num_platoon
+    result['num_initial_company'] = num_company
+
+    result['num_alive_agent'] = num_alive
+    result['num_alive_platoon'] = num_alive_platoon
+    result['num_alive_company'] = num_alive_company
+
+    result['initial_effective_force'] = initial_effective_force
+    result['remaining_effective_force'] = remaining_effective_force
+
+    return result
+
+
+def summarize_episode_results(results, result_red, result_blue, winner):
+    # For reds
+    results['alive_reds_ratio'].append(
+        result_red['num_alive_agent'] / result_red['num_initial_agent']
+    )
+
+    results['alive_red_platoon'].append(result_red['num_alive_platoon'])
+    results['alive_red_company'].append(result_red['num_alive_company'])
+
+    results['initial_red_platoon'].append(result_red['num_initial_platoon'])
+    results['initial_red_company'].append(result_red['num_initial_company'])
+
+    results['remaining_red_effective_force_ratio'].append(
+        result_red['remaining_effective_force'] / result_red['initial_effective_force']
+    )
+
+    # For blues
+    results['alive_blues_ratio'].append(
+        result_blue['num_alive_agent'] / result_blue['num_initial_agent']
+    )
+
+    results['alive_blue_platoon'].append(result_blue['num_alive_platoon'])
+    results['alive_blue_company'].append(result_blue['num_alive_company'])
+
+    results['initial_blue_platoon'].append(result_blue['num_initial_platoon'])
+    results['initial_blue_company'].append(result_blue['num_initial_company'])
+
+    results['remaining_blue_effective_force_ratio'].append(
+        result_blue['remaining_effective_force'] / result_blue['initial_effective_force']
+    )
+
+    results['winner'].append(winner)
+
+    return results
+
+
+def summarize_results(results):
+    result = {}
+
+    result['episode_rewards'] = np.mean(results['episode_rewards'])
+    result['episode_lens'] = np.mean(results['episode_lens'])
+
+    result['num_alive_reds_ratio'] = np.mean(results['alive_reds_ratio'])
+    result['num_alive_red_platoon'] = np.mean(results['alive_red_platoon'])
+    result['num_alive_red_company'] = np.mean(results['alive_red_company'])
+    result['remaining_red_effective_force_ratio'] = \
+        np.mean(results['remaining_red_effective_force_ratio'])
+
+    result['num_initial_red_platoon'] = np.mean(results['initial_red_platoon'])
+    result['num_initial_red_company'] = np.mean(results['initial_red_company'])
+
+    result['num_alive_blues_ratio'] = np.mean(results['alive_blues_ratio'])
+    result['num_alive_blue_platoon'] = np.mean(results['alive_blue_platoon'])
+    result['num_alive_blue_company'] = np.mean(results['alive_blue_company'])
+    result['remaining_blue_effective_force_ratio'] = \
+        np.mean(results['remaining_blue_effective_force_ratio'])
+
+    result['num_initial_blue_platoon'] = np.mean(results['initial_blue_platoon'])
+    result['num_initial_blue_company'] = np.mean(results['initial_blue_company'])
+
+    result['num_red_win'] = results['winner'].count('red_win')
+    result['num_blue_win'] = results['winner'].count('blue_win')
+    result['draw'] = results['winner'].count('draw')
+    result['no_contest'] = results['winner'].count('no_contest')
+
+    return result
+
+
 def main():
     """
     Use this to make an animation.  Specify the model
@@ -747,7 +775,7 @@ def main():
     grid_size = config.grid_size
     ch = config.observation_channels
     n_frames = config.n_frames
-    max_num_agents = 10
+    max_num_agents = config.max_num_red_agents
 
     obs_shape = (grid_size, grid_size, ch * n_frames)
 
@@ -764,9 +792,21 @@ def main():
 
     mask = make_mask(alive_agents_ids, max_num_agents)  # (1,n)
 
-    dummy_policy(padded_obs, mask)
+    # Build policy
+    shuffled_alive_agents_ids, shuffled_order = shuffle_alive_agents(alive_agents_ids)
 
-    # Load model
+    shuffled_padded_states = \
+        get_shuffled_tensor(padded_obs,
+                            shuffled_order=shuffled_order)  # (1,n,g,g,ch*n_frames)
+
+    building_policy(config=config,
+                    policy=dummy_policy,
+                    alive_agents_ids=shuffled_alive_agents_ids,
+                    padded_states=shuffled_padded_states,
+                    masks=mask,
+                    training=False)
+
+    # Load model (need for test)
     load_dir = Path(__file__).parent / 'trial-1/models'
     load_name = '/best_model/best_model'
 

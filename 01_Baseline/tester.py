@@ -14,7 +14,7 @@ from battlefield_strategy import BattleFieldStrategy
 from models import MarlTransformerSequenceModel
 from utils_gnn import get_alive_agents_ids
 from utils_transformer import make_mask, make_padded_obs
-from utils_sequential import shuffle_alive_agents, get_shuffled_tensor, sequential_model, \
+from utils_sequential import shuffle_alive_agents, get_shuffled_tensor, sequential_model_2, \
     building_policy
 
 import matplotlib.pyplot as plt
@@ -185,14 +185,22 @@ class Tester:
                     get_shuffled_tensor(self.padded_states,
                                         shuffled_order=shuffled_order)  # (1,n,g,g,ch*n_frames)
 
-                generated_qlogits, generated_actions = \
-                    sequential_model(config=self.env.config,
-                                     policy=self.policy,
-                                     shuffled_padded_states=shuffled_padded_states,
-                                     mask=self.mask,
-                                     training=False
-                                     )
+                generated_qlogits, generated_actions, scores = \
+                    sequential_model_2(config=self.env.config,
+                                       policy=self.policy,
+                                       shuffled_padded_states=shuffled_padded_states,
+                                       mask=self.mask,
+                                       training=False
+                                       )
                 # (1,n,action_dim), (b,n))
+                # (b,n,action_dim), (b,n)
+                # scores=[enc_score, dec_scores], enc_scores: (1,num_head,n,n),
+                # dec_scores=[score_causal_self_att, score_causal_att],
+                #                   [(1,num_head,n,n),(1,num_head,n,n)]
+
+                # For animation, I use attention scores of decoder, encoder
+                # [dec_causal_self_att, dec_causal_att, enc_self_att]
+                scores = [scores[1][0], scores[1][1], scores[0]]
 
                 # get alive_agents & all agents actions. action=0 <- do nothing
                 actions = {}  # For alive agents
@@ -288,19 +296,13 @@ class Tester:
                     if red.alive:
                         self.env.make_animation.add_observations_3(next_obserations[red.id])
 
-                        self.env.make_animation_attention_map.add_att_map(
-                            relation_kernel=0,  # For relation_kernel 0
-                            agent_id=red.id,
-                            alive_agents_ids=self.alive_agents_ids,
-                            atts=scores,
-                        )
-
-                        self.env.make_animation_attention_map.add_att_map(
-                            relation_kernel=1,  # For relation_kernel 1
-                            agent_id=red.id,
-                            alive_agents_ids=self.alive_agents_ids,
-                            atts=scores,
-                        )
+                        for kernel_id in range(len(scores)):
+                            self.env.make_animation_attention_map.add_att_map(
+                                relation_kernel=kernel_id,  # For relation_kernel 0
+                                agent_id=red.id,
+                                alive_agents_ids=self.alive_agents_ids,
+                                atts=scores,
+                            )
 
                         self.env.make_animation_attention_map.add_observations_3(
                             next_obserations[red.id]

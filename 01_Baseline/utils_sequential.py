@@ -9,7 +9,7 @@ def building_policy(config, policy, alive_agents_ids, padded_states, masks, trai
     input_actions[0] = 5
 
     for i in range(len(alive_agents_ids) - 1):
-        input_actions[i+1] = 3
+        input_actions[i + 1] = 3
 
     input_actions = np.array(input_actions, dtype=np.int32)  # (n,)
     input_actions = np.expand_dims(input_actions, axis=0)  # (b,n)=(1,15)
@@ -104,6 +104,65 @@ def shuffle_alive_agents(alive_agents_ids):
         shuffled_alibve_agents_ids.append(alive_agents_ids[i])
 
     return shuffled_alibve_agents_ids, shuffled_order
+
+
+def sequential_model_2(config, policy, shuffled_padded_states, mask, training):
+    """
+    policy出力から,最終シーケンスの scores を読み込んでリターンする部分を追加
+
+    :param shuffled_padded_states: (b,n,g,g,ch*n_frames)
+    :param mask: (b,n)
+
+    :return:
+        qlogits_generated: (b,n,action_dim)
+        actions_generated: (b,n)
+    """
+
+    batch_size = shuffled_padded_states.shape[0]
+    num_agents = config.max_num_red_agents  # n=15
+
+    start_actions = [5] * batch_size  # 5=start symbol
+    start_actions = np.array(start_actions, dtype=np.int32)  # (b,)
+    start_actions = np.expand_dims(start_actions, axis=-1)  # (b,1)
+
+    qlogits_generated = []
+    actions_generated = []
+
+    for i in range(num_agents):
+        pad_len = num_agents - (i + 1)  # n-1,...,0
+        pad_0 = np.zeros((batch_size, pad_len), dtype=np.int32)  # (b,n-(i+1))
+
+        input_actions = \
+            np.concatenate([start_actions, pad_0],
+                           axis=-1, dtype=np.int32)  # (b,n); (b,i+1)+(b,n-(i+1)), int32
+
+        if input_actions.shape[1] != num_agents:
+            raise ValueError()
+
+        shuffled_qlogits, scores = \
+            policy(shuffled_padded_states,  # (b,n,g,g,ch*n_frames)
+                   input_actions,  # (b,n), int32
+                   mask,  # (b,n), bool
+                   training=training)  # (b,n,action_dim), _
+
+        qlogit = shuffled_qlogits[:, i, :]  # (b,action_dim)
+        qlogit = tf.expand_dims(qlogit, axis=1)  # (b,1,action_dim)
+
+        action = np.argmax(qlogit, axis=-1)  # (b,1)
+
+        qlogits_generated.append(qlogit)  # list of (b,1,action_dim)
+        actions_generated.append(action)  # list of (b,1)
+
+        start_actions = np.concatenate([start_actions, action], axis=-1)  # (b i+2)
+
+    qlogits_generated = tf.concat(qlogits_generated, axis=1)  # (b,n,action_dim)
+
+    actions_generated = np.concatenate(actions_generated, axis=-1)  # (b,n)
+
+    return qlogits_generated, actions_generated, scores
+    # (b,n,action_dim), (b,n)
+    # scores=[enc_score, dec_scores], enc_scores: (1,num_head,n,n),
+    # dec_scores=[score_causal_self_att, score_causal_att], [(1,num_head,n,n),(1,num_head,n,n)]
 
 
 def main():

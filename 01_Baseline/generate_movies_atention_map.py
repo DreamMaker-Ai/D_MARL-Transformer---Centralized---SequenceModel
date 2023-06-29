@@ -34,7 +34,7 @@ class MakeAnimation_AttentionMap:
         self.rgb_channel_efficiencies_obs = []  # observation map of efficiencies
         self.rgb_channel_engage_forces_obs = [] # observation map of engage forces
 
-        self.attention_maps = [[], []]
+        self.attention_maps = [[], [], []]  # 3 attention maps
         self.num_heads = self.env.config.num_heads  # 2
 
     def add_att_map(self, relation_kernel, agent_id, alive_agents_ids, atts):
@@ -134,7 +134,8 @@ class MakeAnimation_AttentionMap:
         fontsize = 12
         ims = []
 
-        num_subplots = self.num_heads
+        # num_subplots = self.num_heads
+        num_subplots = len(self.attention_maps)  # 3
 
         num_colms = int(np.ceil(np.sqrt(num_subplots)))  # 2
         num_rows = int(np.ceil(num_subplots / num_colms))  # 2
@@ -150,15 +151,16 @@ class MakeAnimation_AttentionMap:
                 for colm in range(num_colms):
                     relation_kernel = row * num_colms + colm
 
-                    plt.subplot(gs[row, colm])
-                    plt.title(str('relation kernel-' + str(relation_kernel) +
-                                  ':     head_0:red,   head_1:green'))
-                    plt.tick_params(labelbottom=False, bottom=False,
-                                    labelleft=False, left=False)
-                    img = plt.imshow(self.attention_maps[relation_kernel][step],
-                                     vmin=0, vmax=1, animated=True)
+                    if relation_kernel < len(self.attention_maps):
+                        plt.subplot(gs[row, colm])
+                        plt.title(str('relation kernel-' + str(relation_kernel) +
+                                      ':     head_0:red,   head_1:green'))
+                        plt.tick_params(labelbottom=False, bottom=False,
+                                        labelleft=False, left=False)
+                        img = plt.imshow(self.attention_maps[relation_kernel][step],
+                                         vmin=0, vmax=1, animated=True)
 
-                    im += [img]
+                        im += [img]
 
             txt1 = plt.text(0.0, -3.0, ('time:' + str(np.round(self.dt * step, 2)) + ' sec'),
                             fontsize=fontsize)

@@ -883,7 +883,7 @@ def make_test_results_graph_of_increase_number(agent_type):
     episode_rewards_list = []
     episode_lens_list = []
 
-    with open('trial-1/test_engagement/result_1000.json') as f:
+    with open('trial-1/nominal_test/result.json') as f:
         json_data = json.load(f)
 
         num_red_win_list.append(json_data['num_red_win'] / 1000)
@@ -902,7 +902,7 @@ def make_test_results_graph_of_increase_number(agent_type):
         episode_lens_list.append(json_data['episode_lens'])
 
     # agent_type = 'platoons', 'companies'
-    parent_dir_1 = 'trial-1' + '/test_engagement/'
+    parent_dir_1 = 'trial-1/robustness/'
     parent_dir = parent_dir_1 + 'change_num_of_' + agent_type + '/'
 
     if agent_type == 'platoons' or agent_type == 'blue_platoons' or agent_type == 'red_platoons':

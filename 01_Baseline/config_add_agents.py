@@ -4,8 +4,8 @@ import numpy as np
 class ConfigAddAgents:
     def __init__(self):
         # Define possible adding red agent parameters
-        self.red_platoons_add = (4, 4)  # num range of red platoons, default=(3,7)
-        self.red_companies_add = (1, 1)  # num range of red companies, default=(1,3)
+        self.red_platoons_add = (5, 5)  # num range of red platoons, default=(3,7)
+        self.red_companies_add = (2, 2)  # num range of red companies, default=(1,3)
 
         self.efficiencies_red_add = (0.3, 0.5)  # range
 
