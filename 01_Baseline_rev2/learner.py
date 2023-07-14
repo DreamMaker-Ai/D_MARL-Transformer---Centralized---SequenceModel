@@ -91,16 +91,17 @@ class Learner:
             - sampled_indices: [int,...], len = batch_size
             - correction_weights: Importance samplingの補正用重み, (batch_size,), ndarray
             - experiences: [experience,...], len=batch_size
-                experience =
-                    (
-                        (padded_)states,  # (1,n,g,g,ch*n_frames)
-                        (padded_)actions,  # (1,n)
-                        (padded_)rewards,  # (1,n)
-                        next_(padded_)states,  # (1,n,g,g,ch*n_frames)
-                        (padded_)dones,  # (1,n), bool
-                        masks,  # (1,n), bool
-                        next_(padded_)states_for_q,  # (1,n,g,g,ch*n_frames)
-                    )
+                experience = (
+                    shuffled_padded_states,  # (1,n,g,g,ch*n_frames)
+                    generated_actions,  # (1,n)
+                    shuffled_padded_rewards,  # (1,n)
+                    shuffled_next_padded_states,  # (1,n,g,g,ch*n_frames)  # 使わない
+                    shuffled_padded_dones,  # (1,n), bool
+                    self.mask,  # (1,n), bool
+                    shuffled_next_padded_states_for_q,  # (1,n,g,g,ch*n_frames)
+                    shuffled_next_padded_actions_for_q,  # (1,n)
+                    c, # (1,n,n)
+                )
 
                 ※ experience.states等で読み出し
 
@@ -125,6 +126,8 @@ class Learner:
             dones = []
             masks = []
             next_states_for_q = []
+            next_actions_for_q = []
+            cs = []
 
             for i in range(len(experiences)):
                 states.append(experiences[i].states)
@@ -134,6 +137,8 @@ class Learner:
                 dones.append(experiences[i].dones)
                 masks.append(experiences[i].masks)
                 next_states_for_q.append(experiences[i].next_states_for_q)
+                next_actions_for_q.append(experiences[i].next_actions_for_q)
+                cs.append(experiences[i].c)
 
             # list -> ndarray
             states = np.vstack(states)  # (batch,n,g,g,ch*n_frames)=(32,15,15,15,6)
@@ -143,6 +148,16 @@ class Learner:
             dones = np.vstack(dones)  # (32,15), bool
             masks = np.vstack(masks)  # (32,15), bool
             next_states_for_q = np.vstack(next_states_for_q)  # (32,15,15,15,6)
+            next_actions_for_q = np.vstack(next_actions_for_q)  # (32,15)
+            cs = np.vstack(cs)  # (32,15,15)
+
+            start_symbols = [5] * self.env.config.batch_size
+            start_symbols = np.array(start_symbols, dtype=np.int32)  # (b,)=(32,)
+            start_symbols = np.expand_dims(start_symbols, axis=-1)  # (b,1)=(32,1)
+
+            next_input_actions = np.concatenate(
+                [start_symbols, next_actions_for_q[:, :-1]], axis=-1
+            )  # (b,n)=[(b,1)(b,n-1)]=(32,15)
 
             # ndarray -> tf.Tensor
             states = tf.convert_to_tensor(states, dtype=tf.float32)  # (32,15,15,15,6)
@@ -153,16 +168,22 @@ class Learner:
             masks = tf.convert_to_tensor(masks, dtype=tf.float32)  # (32,15), bool->float32
             next_states_for_q = \
                 tf.convert_to_tensor(next_states_for_q, dtype=tf.float32)  # (32,15,15,15,6)
+            next_input_actions = \
+                tf.convert_to_tensor(next_actions_for_q, dtype=tf.float32)  # (32,15)
+            cs = tf.convert_to_tensor(cs, dtype=tf.float32)  # (32,15,15)
 
             # Target valueの計算
-            next_q_logits, next_actions = \
-                sequential_model(config=self.env.config,
-                                 policy=self.target_q_network,
-                                 shuffled_padded_states=next_states_for_q,
-                                 mask=masks,
-                                 training=False
-                                 )  # (b,n,action_dim)=(32,15,5), (b,n)=(32,15)
+            next_q_logits, _ = self.target_q_network(
+                next_states_for_q,
+                next_input_actions,
+                masks,
+                training=False
+            )   # (32,15,5)
 
+            # Change order
+            next_q_logits = tf.einsum('bij, bjk -> bik', cs, next_q_logits)  # (32,15,5)
+
+            next_actions = tf.argmax(next_q_logits, axis=-1)  # (32,15)
             next_actions = tf.cast(next_actions, dtype=tf.int32)
             next_actions_one_hot = \
                 tf.one_hot(next_actions, depth=self.action_space_dim)  # (32,15,5)
@@ -175,10 +196,6 @@ class Learner:
             # ロス計算
             with tf.GradientTape() as tape:
                 # input actions
-                start_symbols = [5] * self.env.config.batch_size
-                start_symbols = np.array(start_symbols, dtype=np.int32)  # (b,)=(32,)
-                start_symbols = np.expand_dims(start_symbols, axis=-1)  # (b,1)=(32,1)
-
                 input_actions = np.concatenate(
                     [start_symbols, actions[:,:-1]], axis=-1
                 )  # (b,n)=[(b,1)(b,n-1)]=(32,15)

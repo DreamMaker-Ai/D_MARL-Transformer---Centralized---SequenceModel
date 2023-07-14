@@ -40,7 +40,7 @@ def write_config(config):
         'num_heads': config.num_heads,
         'dropout_rate': config.dropout_rate,
 
-        'actor_rollout_steps': config.actor_rollout_steps,
+        # 'actor_rollout_steps': config.actor_rollout_steps,
         'num_update_cycles': config.num_update_cycles,
         'actor_rollouts_before_train': config.actor_rollouts_before_train,
         'batch_size': config.batch_size,
@@ -81,13 +81,13 @@ def write_config(config):
         json.dump(config_list, f, indent=5)
 
 
-def main(num_actors=8):
+def main(num_actors=8, is_debug=False):
     """
     td_errors: (100,1), actor当たり、1回のrolloutは100 stepまで実行
     transitions: [(agents_states, actions, rewards, agents_next_states, dones,
                    adjs, alive_agents_ids)]のリスト, len = 100
     """
-    is_debug = False  # True for debug
+    is_debug = is_debug
 
     if is_debug:
         print("Debug mode starts. May cause ray memory error.")
@@ -269,4 +269,6 @@ if __name__ == '__main__':
     f = open('num_device.txt', 'wb')
     pickle.dump(num_device, f)
 
-    main(num_actors=4)  # default=4 for GCP
+    is_debug = False # True for debug
+
+    main(num_actors=4, is_debug=is_debug)  # default=4 for GCP

@@ -94,16 +94,16 @@ def get_shuffled_tensor(x, shuffled_order):
 def shuffle_alive_agents(alive_agents_ids):
     """
     :param alive_agents_ids: [int, ...], len=a
-    :return: shuffled_alibve_agents_ids, [int, ...], len=a
+    :return: shuffled_alive_agents_ids, [int, ...], len=a
     """
     order = [i for i in range(len(alive_agents_ids))]
 
     shuffled_order = random.sample(order, len(order))
-    shuffled_alibve_agents_ids = []
+    shuffled_alive_agents_ids = []
     for i in shuffled_order:
-        shuffled_alibve_agents_ids.append(alive_agents_ids[i])
+        shuffled_alive_agents_ids.append(alive_agents_ids[i])
 
-    return shuffled_alibve_agents_ids, shuffled_order
+    return shuffled_alive_agents_ids, shuffled_order
 
 
 def sequential_model_2(config, policy, shuffled_padded_states, mask, training):
@@ -165,47 +165,76 @@ def sequential_model_2(config, policy, shuffled_padded_states, mask, training):
     # dec_scores=[score_causal_self_att, score_causal_att], [(1,num_head,n,n),(1,num_head,n,n)]
 
 
+def make_c0_matrix(shuffled_order, n):
+    all_ids = [*range(n)]  # len=n
+
+    diff = list(set(all_ids) ^ set(shuffled_order))
+    diff.sort()
+
+    agents_order = shuffled_order + diff  # len=n
+
+    c0 = np.eye(n, dtype=np.float32)[agents_order]  # (n,n)
+
+    c0 = np.expand_dims(c0, axis=0)  # (1,n,n)
+
+    return c0
+
+
+def make_c1_matrix(alive_ids, n):
+    all_ids = [*range(n)]
+    diff = list(set(all_ids) ^ set(alive_ids))
+    diff.sort()
+
+    c1 = np.eye(n, dtype=np.float32)[alive_ids + diff]
+    c1 = np.expand_dims(c1, axis=0)
+
+    return c1
+
+
+def make_c_matrix(c0, c1, c2, c3):
+    c2_inv = np.linalg.inv(c2)
+    c3_inv = np.linalg.inv(c3)
+
+    c = np.einsum('bij, bjk -> bik', c2_inv, c3_inv)
+    c = np.einsum('bij, bjk -> bik', c1, c)
+    c = np.einsum('bij, bjk -> bik', c0, c)
+
+    return c
+
+
+def test_c():
+    n = 15
+
+    x_ids = [0, 2, 3, 5, 10, 13]
+    next_x_ids = [0, 2, 5, 13]
+
+    shuffled_ids, shuffled_order = shuffle_alive_agents(x_ids)
+    next_shuffled_ids, next_shuffled_order = shuffle_alive_agents(next_x_ids)
+
+    all_ids = [*range(n)]
+
+    diff1 = list(set(all_ids) ^ set(x_ids))
+    diff2 = list(set(all_ids) ^ set(next_x_ids))
+
+    shuffled_x = shuffled_ids + diff1
+    shuffled_next_x = next_shuffled_ids + diff2
+
+    shuffled_x = np.expand_dims(shuffled_x, axis=0)
+    shuffled_next_x = np.expand_dims(shuffled_next_x, axis=0)
+
+    c0 = make_c0_matrix(shuffled_order, n)
+    c1 = make_c1_matrix(x_ids, n)
+    c2 = make_c1_matrix(next_x_ids, n)
+    c3 = make_c0_matrix(next_shuffled_order, n)
+
+    c = make_c_matrix(c0, c1, c2, c3)
+
+    print(shuffled_x)
+    print(np.einsum('bij, bj -> bi', c, shuffled_next_x))
+
+
 def main():
-    n = 5
-    g = 2
-    ch = 1
-    n_frames = 1
-
-    alive_agents_ids = [1, 3, 4]
-    print(alive_agents_ids)
-
-    shuffled_alive_agents_ids, shuffled_order = shuffle_alive_agents(alive_agents_ids)
-    print(shuffled_order)
-    print(shuffled_alive_agents_ids)
-
-    # for states
-    padded_states_1 = np.random.rand(1, len(alive_agents_ids), g, g, ch * n_frames)
-    print(padded_states_1.shape)  # (1,a,g,g,ch*n_frames)
-
-    padded_states_2 = np.zeros((1, n - len(alive_agents_ids), g, g, ch * n_frames))
-    print(padded_states_2.shape)  # (1,n-a,g,g,ch*n_frames)
-
-    padded_states = np.concatenate([padded_states_1, padded_states_2], axis=1)
-    print(padded_states.shape)  # (1,n,g,g,ch*n_frames)
-
-    shuffled_padded_states = get_shuffled_tensor(padded_states, shuffled_order)
-    print(shuffled_padded_states.shape)
-
-    print(padded_states)
-    print(shuffled_padded_states)
-
-    # for dones
-    dones1 = [False] * len(alive_agents_ids)
-    dones1[1] = True
-    dones2 = [True] * (n - len(alive_agents_ids))
-    dones = dones1 + dones2
-    dones = np.array(dones)
-    dones = np.expand_dims(dones, axis=0)
-    print(dones)
-    print(shuffled_order)
-
-    shuffled_dones = get_shuffled_tensor(dones, shuffled_order)
-    print(shuffled_dones)
+    test_c()
 
 
 if __name__ == '__main__':
