@@ -4,7 +4,7 @@ import numpy as np
 import ray
 import tensorflow as tf
 
-from battlefield_strategy import BattleFieldStrategy
+from battlefield_strategy_rev import BattleFieldStrategy
 from models import MarlTransformerSequenceModel
 from utils_transformer import make_mask, make_padded_obs, make_next_states_for_q
 from utils_sequential import shuffle_alive_agents, get_shuffled_tensor, sequential_model, \
@@ -169,7 +169,7 @@ class Learner:
             next_states_for_q = \
                 tf.convert_to_tensor(next_states_for_q, dtype=tf.float32)  # (32,15,15,15,6)
             next_input_actions = \
-                tf.convert_to_tensor(next_actions_for_q, dtype=tf.float32)  # (32,15)
+                tf.convert_to_tensor(next_actions_for_q, dtype=tf.int32)  # (32,15)
             cs = tf.convert_to_tensor(cs, dtype=tf.float32)  # (32,15,15)
 
             # Target valueの計算

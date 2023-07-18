@@ -5,12 +5,12 @@ import gym
 class Config:
     def __init__(self):
 
-        # self.model_dir = 'models/model_1900/'  # newest file -> 'ls -ltr'
+        # self.model_dir = 'models/model_3400/'  # newest file -> 'ls -ltr'
         self.model_dir = None
 
         if self.model_dir:  # starting steps for continual training
-            self.n0 = None  # learner update cycles. Should be read from tensorboard
-            self.actor_cycles = None  # Should be read from tensorboard
+            self.n0 = 3405  # learner update cycles. Should be read from tensorboard
+            self.actor_cycles = 10011  # Should be read from tensorboard
         else:
             self.n0 = 0
             self.actor_cycles = 0
@@ -47,7 +47,7 @@ class Config:
                            )
 
         # Buffer
-        self.capacity = 10000  # default=100000
+        self.capacity = 2500  # default=10000->2500
         self.compress = True
         self.prioritized_replay = True
 
@@ -61,7 +61,7 @@ class Config:
         # Training parameters
         # self.actor_rollout_steps = 100  # default=100
         self.num_update_cycles = 1000000
-        self.actor_rollouts_before_train = 50  # default=50
+        self.actor_rollouts_before_train = 20  # default=50-> 20
         self.batch_size = 32  # Default=32
         self.num_minibatchs = 30  # bach_sizeのminibatchの数/1 update_cycle of learner, default=30
         self.tau = 0.01  # Soft update of target network

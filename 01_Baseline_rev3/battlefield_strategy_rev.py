@@ -1,3 +1,7 @@
+"""
+Bug fixed version. add line 205-206
+Change import n actor, learner, and tester
+"""
 import gym
 import numpy as np
 import matplotlib.pyplot as plt
@@ -197,6 +201,9 @@ class BattleFieldStrategy(gym.Env):
                 infos['remaining_effective_force_reds'] = remaining_effective_force_reds
                 infos['remaining_effective_ef_blues'] = remaining_effective_ef_blues
                 infos['remaining_effective_force_blues'] = remaining_effective_force_blues
+
+            for red in self.reds:  # Bug fixed!
+                dones[red.id] = True
 
         return dones, infos
 

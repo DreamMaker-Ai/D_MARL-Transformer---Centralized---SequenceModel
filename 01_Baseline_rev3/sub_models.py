@@ -624,7 +624,7 @@ class DecoderBlock(tf.keras.models.Model):
     _________________________________________________________________
      Layer (type)                Output Shape              Param #
     =================================================================
-     embedding (Embedding)       multiple                  384
+     dense_6 (Dense)             multiple                  448
 
      add_5 (Add)                 multiple                  0
 
@@ -641,8 +641,8 @@ class DecoderBlock(tf.keras.models.Model):
      mask_block_6 (MaskBlock)    multiple                  0
 
     =================================================================
-    Total params: 577,477
-    Trainable params: 577,477
+    Total params: 577,541
+    Trainable params: 577,541
     Non-trainable params: 0
     _________________________________________________________________
     """
@@ -658,9 +658,9 @@ class DecoderBlock(tf.keras.models.Model):
         )
 
         self.action_emb = \
-            tf.keras.layers.Embedding(
-                input_dim=self.config.action_dim + 1,
-                output_dim=self.config.key_dim
+            tf.keras.layers.Dense(
+                units=self.config.key_dim,
+                activation='linear'
             )
         self.add1 = tf.keras.layers.Add()
         self.mask_blk1 = MaskBlock()
@@ -683,6 +683,9 @@ class DecoderBlock(tf.keras.models.Model):
         # Position encoding block
         positions = \
             tf.expand_dims(self.pos_encoding.pos_encoding, axis=0)  # (1,n,key_dim)=(1,15,64)
+
+        # One_hot action
+        x = tf.one_hot(indices=x, depth=self.config.action_dim+1)  # (b,n,action_dim+1)=(1,15,6)
 
         # Input action sequence encoding
         features = self.action_emb(x)  # (b,n,key_dim)=(1,15,64)

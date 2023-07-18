@@ -269,6 +269,6 @@ if __name__ == '__main__':
     f = open('num_device.txt', 'wb')
     pickle.dump(num_device, f)
 
-    is_debug = False # True for debug
+    is_debug = False  # True for debug
 
     main(num_actors=4, is_debug=is_debug)  # default=4 for GCP

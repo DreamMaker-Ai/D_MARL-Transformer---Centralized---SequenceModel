@@ -9,7 +9,7 @@ import tensorflow as tf
 import numpy as np
 from collections import deque
 
-from battlefield_strategy import BattleFieldStrategy
+from battlefield_strategy_rev import BattleFieldStrategy
 
 from models import MarlTransformerSequenceModel
 from utils_gnn import get_alive_agents_ids

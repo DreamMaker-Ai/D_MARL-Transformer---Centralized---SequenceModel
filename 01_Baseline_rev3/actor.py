@@ -7,7 +7,7 @@ import tensorflow as tf
 import numpy as np
 from collections import deque
 
-from battlefield_strategy import BattleFieldStrategy
+from battlefield_strategy_rev import BattleFieldStrategy
 
 from models import MarlTransformerSequenceModel
 from utils_gnn import get_alive_agents_ids
@@ -245,6 +245,14 @@ class Actor:
 
                 dones['all_dones'] = True
 
+            # When dones["all_dones"]==True and reds win, Need to change dones[agent_id] to True
+            # If not, it would give bad effect to TD-error computation
+            # This is a huge bug so far !!!
+            # if dones['all_dones']:
+            #    for idx in self.alive_agents_ids:
+            #        agent_id = 'red_' + str(idx)
+            #        dones[agent_id] = True
+
             # agents_rewards and agents_dones, including dead and dummy ones
             agents_rewards = []
             agents_dones = []
@@ -417,6 +425,9 @@ class Actor:
                 c,  # (1,n,n)
             )
         """
+        if not self.episode_buffer[-1][4].all():  # check of all done
+            print(self.episode_buffer[-1][4])
+            raise ValueError()
 
         for i in range(1, len(self.episode_buffer)):
             current_ex = self.episode_buffer[i - 1]
@@ -439,3 +450,14 @@ class Actor:
 
             transition = tuple(transition)
             self.buffer.append(transition)
+
+        transition = list(self.episode_buffer[-1][0:6])
+        next_s = np.zeros_like(self.episode_buffer[-1][0])  # (1,n,g,g,ch*n_frames)
+        next_a = np.zeros_like(self.episode_buffer[-1][1])  # (1,n)
+        transition.append(next_s)
+        transition.append(next_a)
+        c = np.expand_dims(np.identity(n=self.env.config.max_num_red_agents), axis=0)  # (1,n,n)
+        transition.append(c)
+
+        transition = tuple(transition)
+        self.buffer.append(transition)
