@@ -1,19 +1,18 @@
 import random
 
-import pylab as p
 import ray
 import gym
 import tensorflow as tf
 import numpy as np
 from collections import deque
 
-from battlefield_strategy_rev import BattleFieldStrategy
+from battlefield_strategy import BattleFieldStrategy
 
 from models import MarlTransformerSequenceModel
 from utils_gnn import get_alive_agents_ids
-from utils_transformer import make_mask, make_padded_obs
+from utils_transformer import make_mask, make_padded_obs, make_next_states_for_q
 from utils_sequential import shuffle_alive_agents, get_shuffled_tensor, sequential_model, \
-    building_policy, make_c0_matrix, make_c1_matrix, make_c_matrix
+    building_policy
 
 
 @ray.remote
@@ -38,7 +37,6 @@ class Actor:
 
         # Define local buffer
         self.buffer = []
-        self.episode_buffer = []
 
         # Initialize environment
         ### The followings are reset in 'reset_states'
@@ -57,9 +55,6 @@ class Actor:
         ### Initialize above Nones
         observations = self.env.reset()
         self.reset_states(observations)
-
-        # actorからはGPUを見えなくする
-        tf.config.set_visible_devices([], 'GPU')
 
         # Build policy
         shuffled_alive_agents_ids, shuffled_order = shuffle_alive_agents(self.alive_agents_ids)
@@ -140,25 +135,23 @@ class Actor:
         :return td_errors, transitions, self.pid (process id)
                 td_errors: (self.env.config.actor_rollout_steps,)=(10,)
                 transitions=[transition,...], len=self.env.config.actor_rollout_steps=10
-                    transition = (
-                        shuffled_padded_states,  # (1,n,g,g,ch*n_frames)
-                        (shuffled_)padded_actions,  # (1,n)
-                        shuffled_padded_rewards,  # (1,n)
-                        shuffled_next_padded_states,  # (1,n,g,g,ch*n_frames)  # 使わない
-                        shuffled_padded_dones,  # (1,n), bool
-                        self.mask,  # (1,n), bool
-                        shuffled_padded_next_states_for_q,  # (1,n,g,g,ch*n_frames)
-                        shuffled_padded_next_actions_for_q,  # (1,n)
-                        c,  # order change matrix, (1,n,n)
-                    )
+                    transition =
+                        (
+                            self.padded_states,  # (1,n,g,g,ch*n_frames)
+                            padded_actions,  # (1,n)
+                            padded_rewards,  # (1,n)
+                            next_padded_states,  # (1,n,g,g,ch*n_frames)
+                            padded_dones,  # (1,n), bool
+                            self.mask,  # (1,n), bool
+                            next_padded_states_for_q,  # (1,n,g,g,ch*n_frames)
+                        )
         """
         # 重みを更新
         self.policy.set_weights(weights=current_weights)
 
-        # 1 episode分のrolloutを行って、経験をepisode_bufferに一時保管
-        dones = {"all_dones": False}
+        # Rolloutをenv.config.actor_rollout_steps回実施し、local bufferにtransitionを一時保存
 
-        while not dones["all_dones"]:
+        for _ in range(self.env.config.actor_rollout_steps):
 
             shuffled_alive_agents_ids, shuffled_order = shuffle_alive_agents(
                 self.alive_agents_ids)
@@ -174,13 +167,13 @@ class Actor:
                                  mask=self.mask,
                                  training=False
                                  )
-            # (1,n,action_dim), (1,n))
+            # (1,n,action_dim), (b,n))
 
             # get alive_agents & all agents actions. action=0 <- do nothing
             actions = {}  # For alive agents
 
             acts = generated_actions[0]  # (n,)
-            padded_actions = np.expand_dims(acts, axis=0)  # (1,n)
+            padded_actions = np.expand_dims(acts, axis=0)  # add batch dim; (1,n)
 
             for i, a in enumerate(shuffled_alive_agents_ids):
                 agent_id = 'red_' + str(a)
@@ -245,14 +238,6 @@ class Actor:
 
                 dones['all_dones'] = True
 
-            # When dones["all_dones"]==True and reds win, Need to change dones[agent_id] to True
-            # If not, it would give bad effect to TD-error computation
-            # This is a huge bug so far !!!
-            # if dones['all_dones']:
-            #    for idx in self.alive_agents_ids:
-            #        agent_id = 'red_' + str(idx)
-            #        dones[agent_id] = True
-
             # agents_rewards and agents_dones, including dead and dummy ones
             agents_rewards = []
             agents_dones = []
@@ -282,29 +267,46 @@ class Actor:
             padded_dones = np.stack(agents_dones, axis=0)  # (n,), bool
             padded_dones = np.expand_dims(padded_dones, axis=0)  # (1,n)
 
-            c0 = make_c0_matrix(shuffled_order=shuffled_order,
-                                n=self.env.config.max_num_red_agents)  # (1,n,n)
+            alive_agents_ids = np.array(self.alive_agents_ids, dtype=object)  # (a,), object
+            alive_agents_ids = np.expand_dims(alive_agents_ids, axis=0)  # (1,a)
 
-            c1 = make_c1_matrix(alive_ids=self.alive_agents_ids,
-                                n=self.env.config.max_num_red_agents)  # (1,n,n)
+            # next_states to compute Q(s', a'), corresponding to alive_agents_ids
+            next_states_for_q = \
+                make_next_states_for_q(
+                    alive_agents_ids=self.alive_agents_ids,
+                    next_alive_agents_ids=next_alive_agents_ids,
+                    raw_next_states=raw_next_states,
+                    obs_shape=self.obs_shape,
+                )  # [(g,g,ch*n_frames),...], len=a', a'=num_next_alive_agents
+
+            next_padded_states_for_q = \
+                make_padded_obs(
+                    max_num_agents=self.env.config.max_num_red_agents,
+                    obs_shape=self.obs_shape,
+                    raw_obs=next_states_for_q,
+                )  # (1,n,g,g,ch*n_frames)
 
             # Enumerate to shuffled_order
             shuffled_padded_rewards = get_shuffled_tensor(padded_rewards, shuffled_order)  # (1,n)
             shuffled_padded_dones = get_shuffled_tensor(padded_dones, shuffled_order)  # (1.n), bool
+            shuffled_next_padded_states = \
+                get_shuffled_tensor(next_padded_states, shuffled_order)  # (1,n,g,g,ch*n_frames)
+            shuffled_next_padded_states_for_q = \
+                get_shuffled_tensor(next_padded_states_for_q, shuffled_order)
+            # (1,n,g,g,ch*n_frames)
 
             # Append to buffer
-            episode_transition = (
+            transition = (
                 shuffled_padded_states,  # (1,n,g,g,ch*n_frames)
                 padded_actions,  # (1,n)
                 shuffled_padded_rewards,  # (1,n)
-                next_padded_states,  # (1,n,g,g,ch*n_frames),  使わない
+                shuffled_next_padded_states,  # (1,n,g,g,ch*n_frames)
                 shuffled_padded_dones,  # (1,n), bool
                 self.mask,  # (1,n), bool
-                c0,  # (1,n,n)
-                c1,  # (1,n,n)
+                shuffled_next_padded_states_for_q,  # (1,n,g,g,ch*n_frames)
             )
 
-            self.episode_buffer.append(episode_transition)
+            self.buffer.append(transition)
 
             if dones['all_dones']:
                 # print(f'episode reward = {self.episode_reward}')
@@ -317,10 +319,6 @@ class Actor:
 
                 self.step += 1
 
-        """ self.episode_buffer から pisode_transition を順に読み込んで、
-            transitionを作成し、self.buffer 順に格納する """
-        self.make_transitions()
-
         # 各transitionの初期優先度（td_error）の計算
         if self.env.config.prioritized_replay:
 
@@ -328,34 +326,21 @@ class Actor:
             actions = np.vstack([transition[1] for transition in self.buffer])  # (b,15)
             rewards = np.vstack([transition[2] for transition in self.buffer])  # (b, 15)
             next_states = np.vstack(
-                [transition[3] for transition in self.buffer])  # (b,15,15,1,6)  使わない
+                [transition[3] for transition in self.buffer])  # (b,15,15,1,6)
             dones = np.vstack([transition[4] for transition in self.buffer])  # (b,15)
             mask = np.vstack([transition[5] for transition in self.buffer])  # (b,15)
-
             next_states_for_q = \
                 np.vstack([transition[6] for transition in self.buffer])  # (b,15,15,15,6)
-            next_actions_for_q = \
-                np.vstack([transition[7] for transition in self.buffer])  # (b,15)
-            cs = np.vstack([transition[8] for transition in self.buffer])  # (b,15,15)
 
-            """ compute TD errors """
-            b = states.shape[0]  # b=102
-            start_symbols = [5] * b
-            start_symbols = np.array(start_symbols, dtype=np.int32)  # (b,)
-            start_symbols = np.expand_dims(start_symbols, axis=-1)  # (b,1)
+            next_q_values, next_actions = \
+                sequential_model(config=self.env.config,
+                                 policy=self.policy,
+                                 shuffled_padded_states=next_states_for_q,
+                                 mask=mask,
+                                 training=False
+                                 )  # (b,n,action_dim), (b,15)
 
-            next_input_actions = np.concatenate(
-                [start_symbols, next_actions_for_q[:, :-1]], axis=-1)  # (b,n)
-
-            next_q_values, _ = self.policy(next_states_for_q,
-                                           next_input_actions,
-                                           mask, training=False)
-            # (b,n,action_dim)
-
-            next_q_values = \
-                tf.einsum('bij, bjk -> bik', cs, next_q_values)  # (b,n,action_dim)
-
-            next_actions = tf.argmax(next_q_values, axis=-1)  # (b,15)
+            # next_actions = tf.argmax(next_q_values, axis=-1)  # (b,15)
             next_actions = tf.cast(next_actions, dtype=tf.int32)
             next_actions_one_hot = tf.one_hot(next_actions,
                                               depth=self.action_space_dim)  # (b,15,5)
@@ -365,6 +350,10 @@ class Actor:
             TQ = rewards + self.gamma * (1 - dones) * next_maxQ  # (b,15)
 
             # input actions
+            b = states.shape[0]
+            start_symbols = [5] * b
+            start_symbols = np.array(start_symbols, dtype=np.int32)  # (b,)
+            start_symbols = np.expand_dims(start_symbols, axis=-1)  # (b,1)
 
             input_actions = np.concatenate(
                 [start_symbols, actions[:, :-1]], axis=-1
@@ -393,71 +382,5 @@ class Actor:
 
         transitions = self.buffer
         self.buffer = []
-        self.episode_buffer = []
 
         return masked_td_errors, transitions, self.pid
-
-    def make_transitions(self):
-        """
-            self.episode_buffer から pisode_transition を順に読み込んで、
-            transitionを作成し、self.buffer 順に格納する。
-
-            episode_transition = (
-                shuffled_padded_states,  # (1,n,g,g,ch*n_frames)
-                padded_actions,  # (1,n)
-                shuffled_padded_rewards,  # (1,n)
-                shuffled_next_padded_states,  # (1,n,g,g,ch*n_frames)  ＃使わない
-                shuffled_padded_dones,  # (1,n), bool
-                self.mask,  # (1,n), bool
-                c0  # (1,n,n)
-                c1  # (1,n,n)
-            )
-
-            transition = (
-                shuffled_padded_states,  # (1,n,g,g,ch*n_frames)
-                padded_actions,  # (1,n)
-                shuffled_padded_rewards,  # (1,n)
-                shuffled_next_padded_states,  # (1,n,g,g,ch*n_frames)  # 使わない
-                shuffled_padded_dones,  # (1,n), bool
-                self.mask,  # (1,n), bool
-                shuffled_next_padded_states,  # (1,n,g,g,ch*n_frames)
-                shuffled_next_padded_actions,  # (1,n)
-                c,  # (1,n,n)
-            )
-        """
-        if not self.episode_buffer[-1][4].all():  # check of all done
-            print(self.episode_buffer[-1][4])
-            raise ValueError()
-
-        for i in range(1, len(self.episode_buffer)):
-            current_ex = self.episode_buffer[i - 1]
-            next_ex = self.episode_buffer[i]
-
-            next_s = next_ex[0]  # (1,n,g,g,ch*n_frames)
-            next_a = next_ex[1]  # (1,n)
-
-            c0 = current_ex[6]  # (1,n,n)
-            c1 = current_ex[7]  # (1,n,n)
-            c2 = next_ex[7]  # (1,n,n)
-            c3 = next_ex[6]  # (1,n,n)
-
-            c = make_c_matrix(c0, c1, c2, c3)
-
-            transition = list(current_ex[0:6])
-            transition.append(next_s)
-            transition.append(next_a)
-            transition.append(c)
-
-            transition = tuple(transition)
-            self.buffer.append(transition)
-
-        transition = list(self.episode_buffer[-1][0:6])
-        next_s = np.zeros_like(self.episode_buffer[-1][0])  # (1,n,g,g,ch*n_frames)
-        next_a = np.zeros_like(self.episode_buffer[-1][1])  # (1,n)
-        transition.append(next_s)
-        transition.append(next_a)
-        c = np.expand_dims(np.identity(n=self.env.config.max_num_red_agents), axis=0)  # (1,n,n)
-        transition.append(c)
-
-        transition = tuple(transition)
-        self.buffer.append(transition)

@@ -9,7 +9,7 @@ import tensorflow as tf
 import numpy as np
 from collections import deque
 
-from battlefield_strategy_rev import BattleFieldStrategy
+from battlefield_strategy import BattleFieldStrategy
 
 from models import MarlTransformerSequenceModel
 from utils_gnn import get_alive_agents_ids
@@ -32,9 +32,6 @@ class Tester:
         self.obs_shape = (self.env.config.grid_size,
                           self.env.config.grid_size,
                           self.env.config.observation_channels * self.n_frames)
-
-        # testerからはGPUを見えなくする
-        tf.config.set_visible_devices([], 'GPU')
 
         # Make a q_network
         self.policy = MarlTransformerSequenceModel(config=self.env.config)

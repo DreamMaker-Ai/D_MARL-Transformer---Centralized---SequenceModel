@@ -10,12 +10,10 @@ class Experience:
     states: np.ndarray
     actions: np.ndarray
     rewards: np.ndarray
-    next_states: np.ndarray  # 使わない
+    next_states: np.ndarray
     dones: np.ndarray
     masks: np.ndarray
     next_states_for_q: np.ndarray
-    next_actions_for_q: np.ndarray
-    c: np.ndarray
 
 
 class Replay:
@@ -40,16 +38,15 @@ class Replay:
         td_errors: (10,)
         transitions=[transition,...], len=10
             transition =
-            (
-                shuffled_padded_states,  # (1,n,g,g,ch*n_frames)
-                padded_actions,  # (1,n)
-                shuffled_padded_rewards,  # (1,n)
-                shuffled_next_padded_states,  # (1,n,g,g,ch*n_frames)  # 使わない
-                shuffled_padded_dones,  # (1,n), bool
-                self.mask,  # (1,n), bool
-                shuffled_next_padded_states_for_q,  # (1,n,g,g,ch*n_frames)
-                shuffled_next_padded_actions_for_q,  # (1,n)
-            )
+                (
+                    self.padded_states,  # (1,n,g,g,ch*n_frames)
+                    padded_actions,  # (1,n)
+                    padded_rewards,  # (1,n)
+                    next_padded_states,  # (1,n,g,g,ch*n_frames)
+                    padded_dones,  # (1,n), bool
+                    self.mask,  # (1,n), bool
+                    next_padded_states_for_q,  # (1,n,g,g,ch*n_frames)
+                )
         """
         assert len(td_errors) == len(transitions)
 

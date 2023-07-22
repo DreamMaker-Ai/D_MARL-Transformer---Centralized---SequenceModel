@@ -5,26 +5,26 @@ import gym
 class Config:
     def __init__(self):
 
-        # self.model_dir = 'models/model_3400/'  # newest file -> 'ls -ltr'
+        # self.model_dir = 'models/model_6500/'  # newest file -> 'ls -ltr'
         self.model_dir = None
 
         if self.model_dir:  # starting steps for continual training
-            self.n0 = 3405  # learner update cycles. Should be read from tensorboard
-            self.actor_cycles = 10011  # Should be read from tensorboard
+            self.n0 = None  # learner update cycles. Should be read from tensorboard
+            self.actor_cycles = None  # Should be read from tensorboard
         else:
             self.n0 = 0
             self.actor_cycles = 0
 
         # Define simulation cond.
-        self.show_each_episode_result = False  # mainly for debug
+        self.show_each_episode_result = True  # mainly for debug
         self.draw_win_distributions = False  # mainly for debug
-        self.max_episodes_test_play = 50  # default=50 for training
+        self.max_episodes_test_play = 1  # default=50 for training
 
         # Animation setting
-        self.make_animation = False  # Use self.max_episodes_test_play=1
+        self.make_animation = True  # Use self.max_episodes_test_play=1
 
         # Time plot of a test setting
-        self.make_time_plot = False  # Use self.max_episodes_test_play=1
+        self.make_time_plot = True  # Use self.max_episodes_test_play=1
 
         # Define environment parameters
         self.grid_size = 15  # default=15
@@ -47,7 +47,7 @@ class Config:
                            )
 
         # Buffer
-        self.capacity = 2500  # default=10000->2500
+        self.capacity = 10000  # default=100000
         self.compress = True
         self.prioritized_replay = True
 
@@ -59,14 +59,14 @@ class Config:
         self.dropout_rate = 0.2  # default=0.2
 
         # Training parameters
-        # self.actor_rollout_steps = 100  # default=100
+        self.actor_rollout_steps = 100  # default=100
         self.num_update_cycles = 1000000
-        self.actor_rollouts_before_train = 20  # default=50-> 20
+        self.actor_rollouts_before_train = 50  # default=50
         self.batch_size = 32  # Default=32
         self.num_minibatchs = 30  # bach_sizeのminibatchの数/1 update_cycle of learner, default=30
         self.tau = 0.01  # Soft update of target network
         self.gamma = 0.96
-        self.max_steps = 100  # Default = 100 for training, 150 for test, 200 for robustness
+        self.max_steps = 200  # Default = 100 for training, 150 for test, 200 for robustness
 
         self.learning_rate = 5e-5  # Default = 5e-5
         self.loss_coef = 1.0  # Default = 1.0
@@ -82,17 +82,17 @@ class Config:
         self.agent_forces = (50, 150)
 
         # Define possible red / blue agent parameters
-        self.red_platoons = (3, 10)  # num range of red platoons, default=(3,10)
-        self.red_companies = (2, 5)  # num range of red companies, default=(2,5)
+        self.red_platoons = (3, 3)  # num range of red platoons, default=(3,10)
+        self.red_companies = (2, 2)  # num range of red companies, default=(2,5)
 
-        self.blue_platoons = (3, 10)  # num range of blue platoons, default=(3,10)
-        self.blue_companies = (2, 5)  # num range of blue companies, default=(2,5)
+        self.blue_platoons = (9, 9)  # num range of blue platoons, default=(3,10)
+        self.blue_companies = (6, 6)  # num range of blue companies, default=(2,5)
 
         self.efficiencies_red = (0.3, 0.5)  # range
         self.efficiencies_blue = (0.3, 0.5)
 
         # For paddiing of multi-agents, *3 for adding red agents
-        self.max_num_red_agents = (self.red_platoons[1] + self.red_companies[1]) * 1
+        self.max_num_red_agents = (self.red_platoons[1] + self.red_companies[1]) * 3
 
         # Red team TBD parameters
         self.R0 = None  # initial total force, set in 'generate_red_team'
